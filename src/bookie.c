@@ -20,12 +20,11 @@
 
 #include <stdbool.h>
 #include <stdlib.h> /* alloc, realloc, free */
-#include <string.h> /* strcpy, strlen */
+#include <string.h> /* strcpy, strlen, memset */
 #include <ctype.h> /* isspace */
 #include <stdio.h>
 
-#define _GNU_SOURCE
-#include <getopt.h>
+#include "arguments.h"
 
 struct arguments 
 {
@@ -54,6 +53,174 @@ struct entry
 size_t entries_allocated;
 size_t entries_used;
 struct entry *entries;
+
+static
+void
+_print_usage_header (const char *command)
+{
+  printf ("Usage: %s [OPTION]... [FILE]\n"
+	  "Read a list and retrieve some data out of it.\n",
+	  command);
+}
+
+static
+void
+_print_version ()
+{
+  printf ("%s %s\n"
+	  "\n"
+	  "Copyright 2011 by Dirk Dierckx <dirk.dierckx@gmail.com>\n"
+	  "This is free software; see the source for copying conditions.\n"
+	  "There is NO warranty; not even for MERCHANTABILITY or FITNESS\n"
+	  "FOR A PARTICULAR PURPOSE.\n",
+	  PACKAGE, VERSION);
+}
+
+static
+bool
+_process_option (struct arguments_definition *def,
+		 int opt,
+		 const char *optarg,
+		 int argc,
+		 char *argv[])
+{
+  struct arguments *args = def->user_data;
+  bool go_on = true;
+  
+  switch (opt) {
+  case '?': /* invalid option */
+    go_on = false;
+    break;
+  case ':': /* invalid argument */
+  case 'h':
+    print_usage (def, argv[0]);
+    go_on = false;
+    break;
+  case 'V':
+    _print_version ();
+    go_on = false;
+    break;
+  case 500:
+    args->list_details = true;
+    break;
+  case 'A':
+    args->list_by_account = true;
+    break;
+  case 'D':
+    args->list_by_date = true;
+    break;
+  case 'T':
+    args->list_total = true;
+    break;
+  case 'a':
+    strncpy (args->account, optarg, 4);
+    args->account[3] = '\0';
+    break;
+  case 'f':
+    strncpy (args->from_date, optarg, 9);
+    args->from_date[8] = '\0';
+    break;
+  case 't':
+    strncpy (args->to_date, optarg, 9);
+    args->to_date[8] = '\0';
+    break;
+  case 'd':
+    strncpy (args->from_date, optarg, 9);
+    args->from_date[8] = '\0';
+    strcpy (args->to_date, args->from_date);
+    break;
+  case 'i':
+    args->invert_amounts = true;
+    break;
+  default: /* unhandled option */
+    fprintf (stderr, "Unhandled option %d\n", opt);
+    go_on = false;
+    break;
+  }
+  
+  return go_on;
+}
+
+static
+bool
+_process_non_options (struct arguments_definition *def,
+		      int optind,
+		      int argc,
+		      char *argv[])
+{
+  struct arguments *args = def->user_data;
+  bool go_on = true;
+  
+  for (int i = optind;go_on && i < argc;++i) {
+    go_on = false;
+    
+    if (NULL == args->input) {
+      if (0 != strcmp ("-", argv[optind]))
+	args->input = fopen (argv[optind], "r");
+      else
+	args->input = stdin;
+
+      go_on = NULL != args->input;
+    }
+  }
+
+  return go_on;
+}
+
+static
+bool
+_get_arguments (struct arguments *args, int argc, char *argv[])
+{
+  struct arguments_definition def;
+  struct arguments_option options[] = {
+    { "Selection", 'a', "account", required_argument, "ACCOUNT",
+      "only read entries for ACCOUNT" },
+    { "Selection", 'f', "from_date", required_argument, "DATE",
+      "only read entries with dates >= DATE" },
+    { "Selection", 't', "to_date", required_argument, "DATE",
+      "only read entries with dates <= DATE" },
+    { "Selection", 'd', "date", required_argument, "DATE",
+      "only read entries with dates matching DATE" },
+    { "Transformation", 'i', "invert-amounts", no_argument, NULL,
+      "invert te sign of all amounts" },
+    { "Output control", 'A', "list-by-account", no_argument, NULL,
+      "list the results grouped by account" },
+    { "Output control", 'D', "list-by-date", no_argument, NULL,
+      "list the results grouped by date" },
+    { "Output control", 'T', "list-total", no_argument, NULL,
+      "list the total amount" },
+    { "Output control", 500, "list-details", no_argument, NULL,
+      "list all the details (default)" },
+    { "Miscellaneous", 'V', "version", no_argument, NULL,
+      "print version information and exit" },
+    { "Miscellaneous", 'h', "help", no_argument, NULL,
+      "print this help and exit" },
+    { NULL, 0, NULL, 0, NULL, NULL }
+  };
+
+  memset (&def, 0, sizeof (struct arguments_definition));
+
+  def.print_usage_header = &_print_usage_header;
+  def.process_option = &_process_option;
+  def.process_non_options = &_process_non_options;
+  def.options = options;
+
+  memset (args, 0, sizeof (struct arguments));
+
+  def.user_data = args;
+
+  if (get_arguments (&def, argc, argv)) {
+    if (!(args->list_details)
+	&& !(args->list_by_account)
+	&& !(args->list_by_date)
+	&& !(args->list_total))
+      args->list_details = true;
+
+    return true;
+  }
+
+  return false;
+}
 
 static
 void
@@ -323,19 +490,7 @@ do_list_total ()
   printf ("total    %#7.2F\n", total_amount);
 }
 
-static
-void
-print_version ()
-{
-  printf ("%s %s\n"
-	  "\n"
-	  "Copyright 2011 by Dirk Dierckx <dirk.dierckx@gmail.com>\n"
-	  "This is free software; see the source for copying conditions.\n"
-	  "There is NO warranty; not even for MERCHANTABILITY or FITNESS\n"
-	  "FOR A PARTICULAR PURPOSE.\n",
-	  PACKAGE, VERSION);
-}
-
+/*
 static
 void
 print_usage (const char *command)
@@ -365,86 +520,7 @@ print_usage (const char *command)
 	  "With no FILE, or when FILE is -, read standard input.\n",
 	  command);
 }
-
-static
-bool
-get_arguments (struct arguments *args, int argc, char *argv[])
-{
-  struct option options[] = {
-    { "help", no_argument, NULL, 500 },
-    { "list-details", no_argument, NULL, 501 },
-    { "list-by-account", no_argument, NULL, 'A' },
-    { "list-by-date", no_argument, NULL, 'D' },
-    { "list-total", no_argument, NULL, 'T' },
-    { "account", required_argument, NULL, 'a' },
-    { "from-date", required_argument, NULL, 'f' },
-    { "to_date", required_argument, NULL, 't' },
-    { "date", required_argument, NULL, 'd' },
-    { "version", no_argument, NULL, 'V' },
-    { "invert-amounts", no_argument, NULL, 'i' },
-    { NULL, 0, NULL, 0 }
-  };
-  int opt;
-
-  memset (args, 0, sizeof (struct arguments));
-
-  while (-1 != (opt = getopt_long (argc, argv, "ADTa:f:t:d:Vi", 
-				   options, NULL))) {
-    switch (opt) {
-    case '?': /* invalid option */
-      return 0;
-    case 500:
-      print_usage (argv[0]);
-      return 0;
-    case 501:
-      args->list_details = true;
-      break;
-    case 'A':
-      args->list_by_account = true;
-      break;
-    case 'D':
-      args->list_by_date = true;
-      break;
-    case 'T':
-      args->list_total = true;
-      break;
-    case 'a':
-      strncpy (args->account, optarg, 4);
-      args->account[3] = '\0';
-      break;
-    case 'f':
-      strncpy (args->from_date, optarg, 9);
-      args->from_date[8] = '\0';
-      break;
-    case 't':
-      strncpy (args->to_date, optarg, 9);
-      args->to_date[8] = '\0';
-      break;
-    case 'd':
-      strncpy (args->from_date, optarg, 9);
-      args->from_date[8] = '\0';
-      strcpy (args->to_date, args->from_date);
-      break;
-    case 'V':
-      print_version ();
-      return 0;
-    case 'i':
-      args->invert_amounts = true;
-      break;
-    }
-  }
-  
-  if (!args->list_details && !args->list_by_account
-      && !args->list_by_date && !args->list_total)
-    args->list_details = true;
-
-  if (optind < argc && 0 != strcmp ("-", argv[optind]))
-    args->input = fopen (argv[optind], "r");
-  else
-    args->input = stdin;
-
-  return true;
-}
+*/
 
 int
 main (int argc, char *argv[])
@@ -454,7 +530,7 @@ main (int argc, char *argv[])
   entries_allocated = entries_used = 0;
   entries = NULL;
 
-  if (get_arguments (&args, argc, argv)) {
+  if (_get_arguments (&args, argc, argv)) {
     load_entries (&args);
 
     if (args.list_details)

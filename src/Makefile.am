@@ -1,3 +1,3 @@
 bin_PROGRAMS=bookie
 
-bookie_SOURCES=bookie.c
+bookie_SOURCES=bookie.c arguments.c
