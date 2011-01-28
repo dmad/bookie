@@ -18,8 +18,10 @@
  * along with bookie.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <stdbool.h>
 #include <stdlib.h> /* alloc, realloc, free */
 #include <string.h> /* strcpy, strlen */
+#include <ctype.h> /* isspace */
 #include <stdio.h>
 
 #define _GNU_SOURCE
@@ -27,12 +29,12 @@
 
 struct arguments 
 {
-  short list_details;  
-  short list_by_account;
-  short list_by_date;
-  short list_total;
+  bool list_details;  
+  bool list_by_account;
+  bool list_by_date;
+  bool list_total;
 
-  short invert_amounts;
+  bool invert_amounts;
 
   /* filter */
   char account[4];
@@ -71,10 +73,10 @@ add_entry (const char *account, const char *date,
   }
 
   if (entries_used + 1 <= entries_allocated) {
-    size_t i, b = entries_used;
+    size_t b = entries_used;
     
     /* TODO: use binary search instead of iterative compare */
-    for (i = 0;i < entries_used;++i) {
+    for (size_t i = 0;i < entries_used;++i) {
       int rel;
       
       rel = strcmp (account, entries[i].account); 
@@ -112,7 +114,7 @@ read_line (FILE *stream, char *buffer, size_t size)
 {
   int rv;
   size_t cur = 0;
-  short add = size > 0;
+  bool add = size > 0;
 
   while ((rv = fgetc (stream)) >= 0) {
     if ('\n' == rv) {
@@ -212,11 +214,10 @@ do_list_details ()
 {
   char account[4];
   float total_amount;
-  size_t i;
     
   account[0] = '\0';
     
-  for (i = 0;i <= entries_used;++i) {
+  for (size_t i = 0;i <= entries_used;++i) {
     if (i == entries_used || 0 != strcmp (account, entries[i].account)) {
       if ('\0' != account[0])
 	printf ("total    %#7.2F\n\n", total_amount);
@@ -242,11 +243,10 @@ do_list_by_account ()
 {
   char account[4];
   float total_amount;
-  size_t i;
 
   account[0] = '\0';
 
-  for (i = 0;i <= entries_used;++i) {
+  for (size_t i = 0;i <= entries_used;++i) {
     if (i == entries_used || 0 != strcmp (account, entries[i].account)) {
       if ('\0' != account[0])
 	printf ("%-3s      %#7.2F\n", account, total_amount);
@@ -275,9 +275,9 @@ do_list_by_date ()
     summary = (struct summary *) malloc (entries_used 
 					 * sizeof (struct summary));
     if (NULL != summary) {
-      size_t i, used = 0;
+      size_t used = 0;
 
-      for (i = 0;i < entries_used;++i) {
+      for (size_t i = 0;i < entries_used;++i) {
 	if (0 == used || strcmp (entries[i].date, summary[used - 1].date) > 0) {
 	  strncpy (summary[used].date, entries[i].date, 9);
 	  summary[used].amount = entries[i].amount;
@@ -304,7 +304,7 @@ do_list_by_date ()
 	}
       }
 
-      for (i = 0;i < used;++i)
+      for (size_t i = 0;i < used;++i)
 	printf ("%8s %#7.2F\n", summary[i].date, summary[i].amount);
 
       free (summary);
@@ -316,10 +316,9 @@ static
 void
 do_list_total ()
 {
-  size_t i;
   float total_amount = 0.0;
   
-  for (i = 0;i < entries_used;++i)
+  for (size_t i = 0;i < entries_used;++i)
     total_amount += entries[i].amount;
   printf ("total    %#7.2F\n", total_amount);
 }
@@ -368,7 +367,7 @@ print_usage (const char *command)
 }
 
 static
-short
+bool
 get_arguments (struct arguments *args, int argc, char *argv[])
 {
   struct option options[] = {
@@ -398,16 +397,16 @@ get_arguments (struct arguments *args, int argc, char *argv[])
       print_usage (argv[0]);
       return 0;
     case 501:
-      args->list_details = 1;
+      args->list_details = true;
       break;
     case 'A':
-      args->list_by_account = 1;
+      args->list_by_account = true;
       break;
     case 'D':
-      args->list_by_date = 1;
+      args->list_by_date = true;
       break;
     case 'T':
-      args->list_total = 1;
+      args->list_total = true;
       break;
     case 'a':
       strncpy (args->account, optarg, 4);
@@ -430,21 +429,21 @@ get_arguments (struct arguments *args, int argc, char *argv[])
       print_version ();
       return 0;
     case 'i':
-      args->invert_amounts = 1;
+      args->invert_amounts = true;
       break;
     }
   }
   
   if (!args->list_details && !args->list_by_account
       && !args->list_by_date && !args->list_total)
-    args->list_details = 1;
+    args->list_details = true;
 
   if (optind < argc && 0 != strcmp ("-", argv[optind]))
     args->input = fopen (argv[optind], "r");
   else
     args->input = stdin;
 
-  return 1;
+  return true;
 }
 
 int
